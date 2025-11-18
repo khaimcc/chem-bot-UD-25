@@ -8,19 +8,42 @@
 #include "esp_camera.h"
 #include <ESPNowCam.h>
 
-// ===== Receiver MAC (Metro S3) =====
+// ===== controller side ESP32 MAC (Metro S3) =====
 static const uint8_t MAC_RECV[6] = {0x80, 0xB5, 0x4E, 0xCD, 0x29, 0x20};
+
+// ===== Robot side ESP32 MAC =====
+// {0xC0, 0x49, 0xEF, 0xE0, 0xDF, 0xB4};
 
 // ===== Radio (ESP-NOW) =====
 ESPNowCam radio;
 
-// ===== Choose your frame settings here =====
+
+// Throttle to avoid saturating ESPNOW while you bring things up
+static uint32_t lastSend = 0;
+static const uint32_t SEND_INTERVAL_MS = 120; // ~8 fps to start (safe)
+
+// ===== frame settings here =====
 static int CAM_JPEG_QUALITY = 45;        // lower = better quality (and larger frames)
 static framesize_t CAM_FRAMESIZE = FRAMESIZE_HVGA; // 320x240
 #define CAM_FB_COUNT     2               // double buffering
 #define CAM_XCLK_HZ      10000000        // 10 MHz is conservative and stable
 
-// ==== LED ====
+
+// controls state from controller
+struct controlState {
+  int8_t dir;   // -2=left, -1=down, 0=center, 1=up, 2=right
+  uint8_t button;
+};
+
+volatile controlState latestControl = {0, 0};
+volatile bool controlUpdated = false;
+
+volatile bool sequenceStarted = false;
+// time since last send
+unsigned long lastSentMs = 0;
+// maximum ms between sends
+const unsigned long HEARTBEAT_MS = 200; // 200ms for 5Hz
+// ==== test LED ====
 #define builtInLED 2  // on GPIO pin 2 on WROVER is IO2 builtin LED
 
 // ===== Freenove ESP32-WROVER (OV5640) pin map =====
@@ -93,19 +116,32 @@ if (s) {
 }
 }
 
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  if (len != sizeof(controlState)) {
+    Serial.printf("Received invalid control data size: %d\n", len);
+    return;
+  }
+  controlState tmp;
+  memcpy(&tmp, incomingData, sizeof(controlState));
+  latestControl.dir = tmp.dir;
+  latestControl.button = tmp.button;
+  controlUpdated = true;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println("\nESPNowCam Freenove sender (explicit pin map)");
 
-  // 1) Camera first (avoids radio contention during DMA setup)
+  // camera first (avoids radio contention during DMA setup)
   initCameraOrHalt();
 
-  // 2) Radio next
+  // radio next
+  // set target as S3 MAC addr
   radio.setTarget(MAC_RECV);
-  // Optional but recommended: fix channel so both ends match (1..13, AP-less)
-  // radio.setChannel(1);
   radio.init();
+
+  esp_now_register_recv_cb(OnDataRecv);
 
   // Print PSRAM info (just informational)
   if (psramFound()) {
@@ -114,14 +150,11 @@ void setup() {
   }
 }
 
-// Throttle to avoid saturating ESPNOW while you bring things up
-static uint32_t lastSend = 0;
-static const uint32_t SEND_INTERVAL_MS = 120; // ~8 fps to start (safe)
-
-
 // fb size if set to 15000B for the receiver. started work here to determine frame size 
 // and adjust buffer size accordingly. couln't log fb size in line 144 just yet.
 void loop() {
+  controlState cs;
+
   int count = 0; // counter var to log fb size every 5 sends
   uint32_t now = millis();
   if (now - lastSend < SEND_INTERVAL_MS) {
@@ -149,4 +182,21 @@ void loop() {
   // Release buffer + friendly yields
   esp_camera_fb_return(fb);
   delay(0);
+
+  // guarantee we process latest control input, not 
+  // dir from packet N and start from packet N+1
+  noInterrupts();
+  memcpy(&cs, (const void*)&latestControl, sizeof(cs));
+  controlUpdated = false;
+  interrupts();
+
+  bool heartbeat = (millis() - lastSentMs) >= HEARTBEAT_MS; // 5 Hz
+
+  // if heartbeat timeout, send update
+  if (heartbeat) {
+    // serial print the current state
+    lastSentMs = millis();
+
+    Serial.printf("Sent: dir=%d, button=%d\n", (int)cs.dir, (int)cs.button);
+  }
 }
