@@ -17,6 +17,11 @@
 // MAC addr of sender (Metro S3)
 // 0x80, 0xB5, 0x4E, 0xCD, 0x29, 0x20
 
+// MAC addr of receiver (ESP32-CAM)
+// {0xC0, 0x49, 0xEF, 0xE0, 0xDF, 0xB4};
+static const uint8_t MAC_RECV[6] = {0xC0, 0x49, 0xEF, 0xE0, 0xDF, 0xB4};
+
+// ===== Radio (ESP-NOW) =====
 ESPNowCam radio;
 
 static TFT_eSPI lcd;              // Instance of LGFX
@@ -45,6 +50,19 @@ static uint32_t frames = 0;
 
 volatile bool pressed = false;
 volatile bool sequenceStarted = false;
+
+// structure to hold control states
+struct controlState {
+  int8_t dir;   // -2=left, -1=down, 0=center, 1=up, 2=right
+  uint8_t button;
+};
+
+// last sent control state
+controlState lastSend = {0, 0};
+// time since last send
+unsigned long lastSentMs = 0;
+// maximum ms between sends
+const unsigned long HEARTBEAT_MS = 200; // 200ms for 5Hz
 
 // button ISR
 // only count first press, ignore bounces
@@ -78,29 +96,32 @@ static void onDataReady(uint32_t length) {
 // prints joystick and button states
 // button state is printed only once when first pressed
 // this simulates the single-use CST device functionality
-static void printInputs(){
+static controlState quantizeInputs(){
+  controlState c;
     // read analog joystick positions
   int x = analogRead(ANALOG_PIN_X);
   int y = analogRead(ANALOG_PIN_Y);
 
   if(x < 1650) {
-    Serial.println("LEFT");
+    c.dir = -2; // LEFT
   } else if(x > 2150) {
-    Serial.println("RIGHT");
+    c.dir = 2;  // RIGHT
   }
   if(y < 1660) {
-    Serial.println("DOWN");
+    c.dir = -1; // DOWN
   } else if(y > 2260) {
-    Serial.println("UP");
+    c.dir = 1;  // UP
   }
   if( (x >= 1650) && (x <= 2150) && (y >= 1660) && (y <= 2260) ) {
-    Serial.println("CENTER");
+    c.dir = 0;  // CENTER
   }
   // check button press
   if(pressed && !sequenceStarted) {
     sequenceStarted = true; // only send once, ever
-    Serial.println("BUTTON PRESSED");
+    c.button = true;
   }
+
+  return c;
 }
 
 
@@ -108,12 +129,17 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  // ===== Display Init =====
   lcd.init();
   lcd.invertDisplay(true);
   lcd.setRotation(0);
   lcd.setBrightness(128);
   lcd.setColorDepth(16);
   lcd.fillScreen(TFT_BLACK);
+
+  // ===== Radio Init =====
+  radio.setTarget(MAC_RECV);
+  radio.init();
 
  // ---- Buffers ----
   jpg = (uint8_t*) malloc(JPG_MAX);
@@ -123,10 +149,11 @@ void setup() {
   }
 
 
-  // ---- ESPNOW ----
+  // ---- ESPNOW  receiver ----
   radio.setRecvBuffer(jpg);             // receive compressed JPEG into 'jpg'
   radio.setRecvCallback(onDataReady);
 
+  // ---- ESPNOW init ----
   if (radio.init()) {
     Serial.println("ESPNow Init Success");
     lcd.setCursor(6, 6);
@@ -144,6 +171,18 @@ void setup() {
 }
 
 void loop(void) {
-  printInputs();
-  delay(1000);
+  controlState cur = quantizeInputs();
+
+  bool stateChanged = (cur.dir != lastSend.dir) || (cur.button != lastSend.button);
+  bool heartbeat = (millis() - lastSentMs) >= HEARTBEAT_MS; // 5 Hz
+
+  // if state changed or heartbeat timeout, send update
+  if (stateChanged || heartbeat) {
+    // send the current state
+    esp_now_send(MAC_RECV, (uint8_t*)&cur, sizeof(cur)); // send using basic espnow send function
+    lastSend = cur;
+    lastSentMs = millis();
+
+    Serial.printf("Sent: dir=%d, button=%d\n", (int)cur.dir, (int)cur.button);
+  }
 }
