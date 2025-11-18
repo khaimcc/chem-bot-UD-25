@@ -33,10 +33,26 @@ int32_t dh = 240;
 static const size_t JPG_MAX = 96 * 1024;
 static uint8_t *jpg = nullptr;
 
-
 // simple FPS/diag
 static uint32_t last_ms = 0;
 static uint32_t frames = 0;
+
+
+// === input defines ===
+#define ANALOG_PIN_X A0
+#define ANALOG_PIN_Y A1
+#define BUTTON_PIN   13
+
+volatile bool pressed = false;
+volatile bool sequenceStarted = false;
+
+// button ISR
+// only count first press, ignore bounces
+void IRAM_ATTR button_isr() {
+  if(!pressed){
+    pressed = true; // just set the flag
+  }
+}
 
 static void onDataReady(uint32_t length) {
   if (!length || length > JPG_MAX) {
@@ -56,6 +72,34 @@ static void onDataReady(uint32_t length) {
     Serial.printf("fps=%u, last_jpg_bytes=%u\n", frames, (unsigned)length);
     frames = 0;
     last_ms = now;
+  }
+}
+
+// prints joystick and button states
+// button state is printed only once when first pressed
+// this simulates the single-use CST device functionality
+static void printInputs(){
+    // read analog joystick positions
+  int x = analogRead(ANALOG_PIN_X);
+  int y = analogRead(ANALOG_PIN_Y);
+
+  if(x < 1650) {
+    Serial.println("LEFT");
+  } else if(x > 2150) {
+    Serial.println("RIGHT");
+  }
+  if(y < 1660) {
+    Serial.println("DOWN");
+  } else if(y > 2260) {
+    Serial.println("UP");
+  }
+  if( (x >= 1650) && (x <= 2150) && (y >= 1660) && (y <= 2260) ) {
+    Serial.println("CENTER");
+  }
+  // check button press
+  if(pressed && !sequenceStarted) {
+    sequenceStarted = true; // only send once, ever
+    Serial.println("BUTTON PRESSED");
   }
 }
 
@@ -92,7 +136,14 @@ void setup() {
     lcd.setCursor(6, 6);
     lcd.println("ESPNow Init FAILED");
   }
+
+  analogSetAttenuation(ADC_11db); // set full range 3.3V for the analog pins
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // set pin mode for button
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), button_isr, FALLING); // interrupt on GPIO13 falling edge
 }
 
 void loop(void) {
+  printInputs();
+  delay(1000);
 }
