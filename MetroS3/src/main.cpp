@@ -124,6 +124,12 @@ static controlState quantizeInputs(){
   return c;
 }
 
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -164,6 +170,10 @@ void setup() {
     lcd.println("ESPNow Init FAILED");
   }
 
+  // Once ESPNow is successfully Init, we will register for Send CB to
+  // get the status of Transmitted packet
+  esp_now_register_send_cb(OnDataSent);
+
   analogSetAttenuation(ADC_11db); // set full range 3.3V for the analog pins
 
   pinMode(BUTTON_PIN, INPUT_PULLUP); // set pin mode for button
@@ -178,8 +188,15 @@ void loop(void) {
 
   // if state changed or heartbeat timeout, send update
   if (stateChanged || heartbeat) {
-    // send the current state
-    esp_now_send(MAC_RECV, (uint8_t*)&cur, sizeof(cur)); // send using basic espnow send function
+    // Send message via ESP-NOW
+    esp_err_t result = esp_now_send(MAC_RECV, (uint8_t *) &cur, sizeof(cur));
+  
+    if (result == ESP_OK) {
+      Serial.println("Sent with success");
+    }
+    else {
+      Serial.println("Error sending the data");
+    }
     lastSend = cur;
     lastSentMs = millis();
 
