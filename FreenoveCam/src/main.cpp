@@ -125,6 +125,8 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   memcpy(&tmp, incomingData, sizeof(controlState));
   latestControl.dir = tmp.dir;
   latestControl.button = tmp.button;
+  // test print to see what was received
+  Serial.printf("received: dir=%d, button=%d\n", (int)latestControl.dir, (int)latestControl.button);
   controlUpdated = true;
 }
 
@@ -197,6 +199,6 @@ void loop() {
     // serial print the current state
     lastSentMs = millis();
 
-    Serial.printf("Sent: dir=%d, button=%d\n", (int)cs.dir, (int)cs.button);
+    Serial.printf("received: dir=%d, button=%d\n", (int)cs.dir, (int)cs.button);
   }
 }
