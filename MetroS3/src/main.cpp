@@ -144,8 +144,8 @@ void setup() {
   lcd.fillScreen(TFT_BLACK);
 
   // ===== Radio Init =====
-  radio.setTarget(MAC_RECV);
-  radio.init();
+  //radio.setTarget(MAC_RECV);
+  //radio.init();
 
  // ---- Buffers ----
   jpg = (uint8_t*) malloc(JPG_MAX);
@@ -160,6 +160,7 @@ void setup() {
   radio.setRecvCallback(onDataReady);
 
   // ---- ESPNOW init ----
+  radio.setTarget(MAC_RECV);
   if (radio.init()) {
     Serial.println("ESPNow Init Success");
     lcd.setCursor(6, 6);
@@ -190,12 +191,22 @@ void loop(void) {
   if (stateChanged || heartbeat) {
     // Send message via ESP-NOW
     esp_err_t result = esp_now_send(MAC_RECV, (uint8_t *) &cur, sizeof(cur));
-  
     if (result == ESP_OK) {
       Serial.println("Sent with success");
-    }
-    else {
-      Serial.println("Error sending the data");
+    } else if(result == ESP_ERR_ESPNOW_NOT_INIT) {
+      Serial.println("ESPNOW Not Init");
+    } else if(result == ESP_ERR_ESPNOW_ARG) {
+      Serial.println("ESPNOW Invalid Argument");
+    } else if (result == ESP_ERR_ESPNOW_INTERNAL) {
+      Serial.println("ESPNOW Internal Error");
+    } else if (result == ESP_ERR_ESPNOW_NO_MEM) {
+      Serial.println("ESPNOW Out of Memory");
+    } else if (result == ESP_ERR_ESPNOW_NOT_FOUND) {
+      Serial.println("ESPNOW Peer Not Found");
+    } else if (result == ESP_ERR_ESPNOW_IF) {
+      Serial.println("ESPNOW Interface Error");
+    } else {
+      Serial.println("ESPNOW Send Failed");
     }
     lastSend = cur;
     lastSentMs = millis();

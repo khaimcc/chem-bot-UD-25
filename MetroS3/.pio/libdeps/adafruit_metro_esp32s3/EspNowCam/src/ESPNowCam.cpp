@@ -291,6 +291,17 @@ bool ESPNowCam::init(uint8_t chunk_size) {
     else if (buffers.size() > 0)
       esp_now_register_recv_cb(msgReceiveCbByMAC);
 
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, targetAddress, 6);
+    peerInfo.channel = (_channel != -1) ? _channel : 0;   // 0 = current channel
+    peerInfo.encrypt = false;
+
+    esp_err_t res = esp_now_add_peer(&peerInfo);
+    if (res != ESP_OK && res != ESP_ERR_ESPNOW_EXIST) {
+      log_e("esp_now_add_peer failed: %d", res);
+      return false;
+    }
+
     return true;
 
   } else {
