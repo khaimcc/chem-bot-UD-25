@@ -28,6 +28,8 @@ static framesize_t CAM_FRAMESIZE = FRAMESIZE_HVGA; // 320x240
 #define CAM_FB_COUNT     2               // double buffering
 #define CAM_XCLK_HZ      10000000        // 10 MHz is conservative and stable
 
+static const int ESP_TX2 = 14; // goes to arduino D8
+
 
 // controls state from controller
 struct controlState {
@@ -35,7 +37,7 @@ struct controlState {
   uint8_t button;
 };
 
-volatile controlState latestControl = {0, 0};
+controlState latestControl = {0, 0};
 volatile bool controlUpdated = false;
 
 volatile bool sequenceStarted = false;
@@ -117,23 +119,32 @@ if (s) {
 }
 
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  Serial.printf("Raw len=%d: ", len);
+  for (int i = 0; i < len; i++) {
+    Serial.printf("%02X ", incomingData[i]);
+  }
+  Serial.println();
+
   if (len != sizeof(controlState)) {
     Serial.printf("Received invalid control data size: %d\n", len);
     return;
   }
+
   controlState tmp;
   memcpy(&tmp, incomingData, sizeof(controlState));
-  latestControl.dir = tmp.dir;
-  latestControl.button = tmp.button;
-  // test print to see what was received
-  Serial.printf("received: dir=%d, button=%d\n", (int)latestControl.dir, (int)latestControl.button);
+
+  noInterrupts();
+  latestControl = tmp;       // single atomic assignment, no reset
   controlUpdated = true;
+  interrupts();
 }
 
 void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println("\nESPNowCam Freenove sender (explicit pin map)");
+
+  Serial2.begin(9600, SERIAL_8N1, -1, ESP_TX2); // TX2 only
 
   // camera first (avoids radio contention during DMA setup)
   initCameraOrHalt();
@@ -199,6 +210,10 @@ void loop() {
     // serial print the current state
     lastSentMs = millis();
 
-    Serial.printf("received: dir=%d, button=%d\n", (int)cs.dir, (int)cs.button);
+    int d = (int)cs.dir;
+    int b = (int)cs.button;
+
+    Serial.printf("%d,%d\n", d, b);
+    Serial2.printf("%d,%d\n", d, b);
   }
 }

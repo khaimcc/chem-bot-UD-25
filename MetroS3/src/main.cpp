@@ -48,9 +48,6 @@ static uint32_t frames = 0;
 #define ANALOG_PIN_Y A1
 #define BUTTON_PIN   13
 
-volatile bool pressed = false;
-volatile bool sequenceStarted = false;
-
 // structure to hold control states
 struct controlState {
   int8_t dir;   // -2=left, -1=down, 0=center, 1=up, 2=right
@@ -63,14 +60,6 @@ controlState lastSend = {0, 0};
 unsigned long lastSentMs = 0;
 // maximum ms between sends
 const unsigned long HEARTBEAT_MS = 200; // 200ms for 5Hz
-
-// button ISR
-// only count first press, ignore bounces
-void IRAM_ATTR button_isr() {
-  if(!pressed){
-    pressed = true; // just set the flag
-  }
-}
 
 static void onDataReady(uint32_t length) {
   if (!length || length > JPG_MAX) {
@@ -97,7 +86,7 @@ static void onDataReady(uint32_t length) {
 // button state is printed only once when first pressed
 // this simulates the single-use CST device functionality
 static controlState quantizeInputs(){
-  controlState c;
+  controlState c = {0, 0};
     // read analog joystick positions
   int x = analogRead(ANALOG_PIN_X);
   int y = analogRead(ANALOG_PIN_Y);
@@ -115,19 +104,20 @@ static controlState quantizeInputs(){
   if( (x >= 1650) && (x <= 2150) && (y >= 1660) && (y <= 2260) ) {
     c.dir = 0;  // CENTER
   }
-  // check button press
-  if(pressed && !sequenceStarted) {
-    sequenceStarted = true; // only send once, ever
-    c.button = true;
+  // LEVEL-BASED BUTTON:
+  // With INPUT_PULLUP: LOW = pressed, HIGH = not pressed
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    c.button = 1;     // pressed
+  } else {
+    c.button = 0;     // not pressed
   }
-
   return c;
 }
 
 // callback when data is sent
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  //Serial.print("\r\nLast Packet Send Status:\t");
+  //Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 
@@ -178,7 +168,6 @@ void setup() {
   analogSetAttenuation(ADC_11db); // set full range 3.3V for the analog pins
 
   pinMode(BUTTON_PIN, INPUT_PULLUP); // set pin mode for button
-  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), button_isr, FALLING); // interrupt on GPIO13 falling edge
 }
 
 void loop(void) {
@@ -192,19 +181,7 @@ void loop(void) {
     // Send message via ESP-NOW
     esp_err_t result = esp_now_send(MAC_RECV, (uint8_t *) &cur, sizeof(cur));
     if (result == ESP_OK) {
-      Serial.println("Sent with success");
-    } else if(result == ESP_ERR_ESPNOW_NOT_INIT) {
-      Serial.println("ESPNOW Not Init");
-    } else if(result == ESP_ERR_ESPNOW_ARG) {
-      Serial.println("ESPNOW Invalid Argument");
-    } else if (result == ESP_ERR_ESPNOW_INTERNAL) {
-      Serial.println("ESPNOW Internal Error");
-    } else if (result == ESP_ERR_ESPNOW_NO_MEM) {
-      Serial.println("ESPNOW Out of Memory");
-    } else if (result == ESP_ERR_ESPNOW_NOT_FOUND) {
-      Serial.println("ESPNOW Peer Not Found");
-    } else if (result == ESP_ERR_ESPNOW_IF) {
-      Serial.println("ESPNOW Interface Error");
+      //Serial.println("Sent with success");
     } else {
       Serial.println("ESPNOW Send Failed");
     }
