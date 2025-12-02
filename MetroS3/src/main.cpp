@@ -85,6 +85,8 @@ static void onDataReady(uint32_t length) {
 // prints joystick and button states
 // button state is printed only once when first pressed
 // this simulates the single-use CST device functionality
+
+// need to refine zone thresholds experimentally
 static controlState quantizeInputs(){
   controlState c = {0, 0};
     // read analog joystick positions

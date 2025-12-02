@@ -28,8 +28,8 @@ static framesize_t CAM_FRAMESIZE = FRAMESIZE_HVGA; // 320x240
 #define CAM_FB_COUNT     2               // double buffering
 #define CAM_XCLK_HZ      10000000        // 10 MHz is conservative and stable
 
-static const int ESP_TX2 = 14; // goes to arduino D8
-
+// transmitter pin for TX2, talks to arduino D8
+static const int ESP_TX2 = 14;
 
 // controls state from controller
 struct controlState {
