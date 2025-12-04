@@ -81,8 +81,8 @@ static camera_config_t camCfg() {
 
   if(psramFound()){
     c.fb_location = CAMERA_FB_IN_PSRAM;    // try PSRAM if available
-    c.frame_size = FRAMESIZE_QVGA;   // VGA if PSRAM
-    c.jpeg_quality = 30;          
+    c.frame_size = FRAMESIZE_QQVGA;   // VGA if PSRAM
+    c.jpeg_quality = 20;          
     Serial.println("PSRAM found" );
   } else {
     c.fb_location = CAMERA_FB_IN_DRAM;  // fallback to DRAM
