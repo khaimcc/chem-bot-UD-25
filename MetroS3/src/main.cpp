@@ -30,6 +30,15 @@ static TFT_eSPI lcd;              // Instance of LGFX
 static const int W = 320;
 static const int H = 240;
 
+// L33-40 for QQVGA sender frame size
+
+// source camera fram size when using QQVGA
+static const int SRC_W = 160;
+static const int SRC_H = 120;
+
+// sprite to hold decoded frame
+static LGFX_Sprite camSprite(&lcd);
+
 // display globals
 int32_t dw = 320;
 int32_t dh = 240;
@@ -61,6 +70,8 @@ unsigned long lastSentMs = 0;
 // maximum ms between sends
 const unsigned long HEARTBEAT_MS = 200; // 200ms for 5Hz
 
+
+/* *** FOR QVGA SENDER FRAME SIZE ***
 static void onDataReady(uint32_t length) {
   if (!length || length > JPG_MAX) {
     Serial.printf("onDataReady: bad len=%u (max=%u)\n", (unsigned)length, (unsigned)JPG_MAX);
@@ -70,6 +81,37 @@ static void onDataReady(uint32_t length) {
   lcd.startWrite();
   // LovyanGFX decodes JPEG and pushes in tiles safely for ESP32-S3
   lcd.drawJpg(jpg, length, 0, 0);   // x=0, y=0
+  lcd.endWrite();
+
+  // crude FPS
+  frames++;
+  uint32_t now = millis();
+  if (now - last_ms >= 1000) {
+    Serial.printf("fps=%u, last_jpg_bytes=%u\n", frames, (unsigned)length);
+    frames = 0;
+    last_ms = now;
+  }
+}
+*/
+
+// *** FOR QQVGA SENDER FRAME SIZE ***
+static void onDataReady(uint32_t length) {
+  if (!length || length > JPG_MAX) {
+    Serial.printf("onDataReady: bad len=%u (max=%u)\n", (unsigned)length, (unsigned)JPG_MAX);
+    return;
+  }
+
+  // Decode JPEG into the sprite at native resolution (160x120)
+  camSprite.fillScreen(TFT_BLACK);                     // not strictly required, but nice
+  camSprite.drawJpg(jpg, length, 0, 0);                // draw at (0,0) in the sprite
+
+  // Compute scale factors to fill the 320x240 TFT
+  const float sx = float(W) / float(SRC_W);            // 320/160 = 2.0
+  const float sy = float(H) / float(SRC_H);            // 240/120 = 2.0
+
+  // Push scaled sprite centered on the TFT
+  lcd.startWrite();
+  camSprite.pushRotateZoom(W / 2, H / 2, 0.0f, sx, sy);  // angle=0, zoom=2x in both directions
   lcd.endWrite();
 
   // crude FPS
@@ -134,6 +176,14 @@ void setup() {
   lcd.setBrightness(128);
   lcd.setColorDepth(16);
   lcd.fillScreen(TFT_BLACK);
+
+  // L147-153 for QQVGA sender
+  // ===== Sprite init (160x120 buffer) =====
+  camSprite.setColorDepth(16);
+  // optional: if you have PSRAM and want to use it
+  // camSprite.setPsram(true);
+  camSprite.createSprite(SRC_W, SRC_H);
+  camSprite.fillScreen(TFT_BLACK);
 
   // ===== Radio Init =====
   //radio.setTarget(MAC_RECV);
